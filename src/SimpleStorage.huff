@@ -1,0 +1,54 @@
+// Bare minimum example of how to set and read data from huff
+
+// Interface
+#define function increment() nonpayable returns ()
+#define function setValue(uint256) nonpayable returns ()
+#define function getValue() view returns (uint256)
+
+// Storage definitions
+#define constant VALUE_SLOT = FREE_STORAGE_POINTER()
+
+// Functions
+#define macro INCREMENT() = takes (0) returns (0) {
+    // TODO:
+    // 1. Take value from calldata and push onto stack
+    // 2. Store stack value into storage
+    revert
+}
+
+#define macro SET_VALUE() = takes (0) returns (0) {
+    // TODO:
+    // 1. Extract value from calldata onto stack
+    // 2. Store extracted value into storage
+    revert
+}
+
+#define macro GET_VALUE() = takes (0) returns (0) {
+    // TODO:
+    // 1. Read value from storage onto stack
+    // 2. Move stack value into memory
+    // 3. Return value (from memory)
+    revert
+}
+
+#define macro MAIN() = takes (0) returns (0) {
+    // Load the function selector
+    0x00 calldataload 0xE0 shr    // [sig]
+
+    // Jump to functino signature
+    dup1 __FUNC_SIG(getValue) eq getValue jumpi
+    dup1 __FUNC_SIG(setValue) eq setValue jumpi
+    dup1 __FUNC_SIG(increment) eq increment jumpi
+
+    // If we reach here its an invalid function signature
+    stop
+
+    getValue:
+        GET_VALUE()
+
+    setValue:
+        SET_VALUE()
+
+    increment:
+        INCREMENT()
+}
