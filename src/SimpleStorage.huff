@@ -11,7 +11,7 @@
 // Functions
 #define macro INCREMENT() = takes (0) returns (0) {
     // TODO:
-    // 1. Take value from calldata and push onto stack
+    // 1. Take value from storage and push onto stack
     // 2. Store stack value into storage
     revert
 }
