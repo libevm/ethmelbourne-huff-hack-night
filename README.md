@@ -28,8 +28,11 @@ Add in support to store arrays and mappings into `SimpleStorage.huff` to win a 0
 
 ```solidity
 interface ISimpleStorage {
+    function setString(string memory) external;
+    function getString(string memory) external;
+
     function setArray(uint256[] memory) external;
-    function getArray(uint256 i) external returns (uint256);
+    function getArray() external returns (uint256[] memory);
 
     function setMap(bytes32 key, bytes32 value) external;
     function getMap(bytes32 key) external returns (bytes32);
