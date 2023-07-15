@@ -1,44 +1,199 @@
-// Bare minimum example of how to set and read data from huff
-
 // Interface
 #define function increment() nonpayable returns ()
 #define function setValue(uint256) nonpayable returns ()
-#define function getValue() view returns (uint256)
+#define function getValue() nonpayable returns (uint256)
+
+#define function setString(string) nonpayable returns ()
+#define function getString() nonpayable returns (string)
+
+#define function getArray() nonpayable returns (uint256[] memory)
+#define function setArray(uint256[]) nonpayable returns ()
+
+#define function setMap(bytes32, bytes32) nonpayable returns ()
+#define function getMap(bytes32) nonpayable returns ()
 
 // Storage definitions
 #define constant VALUE_SLOT = FREE_STORAGE_POINTER()
+// String
+#define constant STRING_OFFSET_SLOT = FREE_STORAGE_POINTER()
+#define constant STRING_LENGTH_SLOT = FREE_STORAGE_POINTER()
+#define constant STRING_VALUES_SLOT = FREE_STORAGE_POINTER()
+// Array
+#define constant ARRAY_SLOT = FREE_STORAGE_POINTER()
 
 // Functions
 #define macro INCREMENT() = takes (0) returns (0) {
-    // TODO:
-    // 1. Take value from calldata and push onto stack
-    // 2. Store stack value into storage
-    revert
+    // Load from storage
+    [VALUE_SLOT] sload
+    // Add 1
+    0x01 add
+    // Store in memory
+    [VALUE_SLOT] sstore
+    stop
 }
 
 #define macro SET_VALUE() = takes (0) returns (0) {
-    // TODO:
-    // 1. Extract value from calldata onto stack
-    // 2. Store extracted value into storage
-    revert
+    // Read uint256 from calldata - 4 bytes are sliced from the start
+    0x04 calldataload    
+    // Store
+    [VALUE_SLOT] sstore
+    stop
 }
 
 #define macro GET_VALUE() = takes (0) returns (0) {
-    // TODO:
-    // 1. Read value from storage onto stack
-    // 2. Move stack value into memory
-    // 3. Return value (from memory)
-    revert
+    // Load value from storage.
+    [VALUE_SLOT] sload
+    // Store value in memory.
+    0x00 mstore
+    // Return value
+    0x20 0x00 return
+}
+
+#define macro GET_STRING() = takes (0) returns (0) {
+   [STRING_OFFSET_SLOT] sload // Load from storage
+   0x00 mstore // store dynamic offset at 0x00
+
+   [STRING_LENGTH_SLOT] sload // Load from storage
+   0x20 mstore // store string length at 0x20
+
+   [STRING_VALUES_SLOT] sload // Load from storage
+   0x40 mstore // store string length at 0x40
+
+   // return full 96 bytes value
+   0x60 0x00 return              
+}
+
+#define macro SET_STRING() = takes (0) returns (0) {
+    0x04 calldataload // [offset]
+    [STRING_OFFSET_SLOT] sstore
+
+    0x24 calldataload // [length]
+    [STRING_LENGTH_SLOT] sstore
+
+    0x44 calldataload // [value]
+    [STRING_VALUES_SLOT] sstore
+    stop
+}
+
+// Took and adapted from https://github.com/huff-language/huffmate/blob/main/src/data-structures/Arrays.huff
+#define macro GET_ARRAY() = takes (0) returns (0) {
+    [ARRAY_SLOT] // [slot]
+    // store the size of each element in memory
+    0x20 0x80 mstore       // [slot]
+    0x80                   // [mem_ptr, slot]
+    // load length from storage
+    dup2 sload dup1             // [length, length, curr_mem_ptr, slot]
+    // store length in memory
+    swap2 0x20 add              // [curr_mem_ptr+0x20, length, length, slot]
+    swap1 dup2 mstore           // [curr_mem_ptr, length, slot]
+
+    // store slot in memory scratch space and compute hash
+    swap2 0x00 mstore           // [length, curr_mem_ptr]
+    0x20 0x00 sha3 swap2        // [curr_mem_ptr, length, sha3(slot)]
+
+    // loop and load every element in slot sha3(slot)+n
+    0x00 start jump             // [index(0), curr_mem_ptr, length, sha3(slot)]
+    continue:
+        // if index == length -> it's over
+        eq end jumpi            // [index(i), curr_mem_ptr, length, sha3(slot)]
+        start:
+        // load from storage ; add index to sha3(slot)
+        dup1 dup5 add sload         // [array(i), index(i), curr_mem_ptr, length, sha3(slot)]
+        // store in memory
+        swap1 swap2 0x20 add        // [curr_mem_ptr+0x20, array(i), index(i), length, sha3(slot)]
+        dup1 swap2 swap1 mstore     // [curr_mem_ptr+0x20, index(i), length, sha3(slot)]
+        // update index
+        swap1 0x01 add              // [index(i+1), curr_mem_ptr, length, sha3(slot)]
+        dup1 dup4
+        continue jump
+
+    end:
+    // size of data to return = size of individual element + array length + encoded elements
+    swap2 0x02 add 0x05 shl     // [size, curr_mem_ptr, index(i), sha3(slot)]
+    0x80 return
+}
+
+// Took and adapted from https://github.com/huff-language/huffmate/blob/main/src/data-structures/Arrays.huff
+#define macro SET_ARRAY() = takes (0) returns (0) {
+    [ARRAY_SLOT] 0x04 // [calldata_start, slot]
+    // skip size of one individual element
+    0x20 add                    // [calldata_start+0x20, slot]
+    dup1 0x20 add swap1         // [calldata_start+0x20, calldata_start+0x40, slot]
+    // load length
+    calldataload                // [length, calldata_offset, slot]
+    // store length at slot
+    dup1 dup4                   // [slot, length, length, calldata_offset, slot]
+    sstore                      // [length, calldata_offset, slot]
+
+    // store slot in memory scratch space and compute hash
+    dup3 0x00 mstore            // [length, calldata_offset, slot]
+    0x20 0x00 sha3              // [sha3(slot), length, ,calldata_offset slot]
+
+    // loop and store every element in slot sha3(slot)+n
+    0x00                        // [index(0), sha3(slot), length, calldata_offset, slot]
+    start jump
+    continue:
+        // if index == length -> it's over
+        eq end jumpi                        // [index(i), sha3(slot), length, calldata_offset, slot]
+        start:
+        // load from calldata
+        dup1 0x20 mul dup5 add calldataload  // [array(i), index(i), sha3(slot), length, calldata_offset, slot]
+        // store at slot sha3(slot)+index
+        dup3 dup3 add sstore        // [index(i), sha3(slot), length, calldata_offset, slot]
+        // inc index
+        0x01 add                    // [index(i+1), sha3(slot), length, calldata_offset, slot]
+        dup3 dup2                   // [index(i+1), length, index(i+1), sha3(slot), length, calldata_offset, slot]
+        continue jump
+    end:
+    stop
+}
+
+#define macro GET_MAP() = takes (0) returns (0) {
+    // Load the key in memory
+    0x04 calldataload // [key]
+    0x00              // [offset, key]
+    // Load the key in memory, offset 0
+    mstore            // []
+
+    // Compute key hash in memory, add result in stack
+    0x20 0x00 sha3 // [hash]
+    
+    // Load form storage
+    sload // [value]
+    // Store value in memory and return
+    0x00 mstore
+    0x20 0x00 return
+}
+
+#define macro SET_MAP() = takes (0) returns (0) {
+    0x04 calldataload  // [key]
+    0x00               // [offset, key]
+    // Load the key in memory, offset 0
+    mstore             // []
+
+    // Get value from calldata
+    0x24 calldataload  // [value]
+
+    // Compute key hash in memory
+    0x20 0x00 sha3 // [hash, value]
+    sstore         // store, use hash as key
+    stop
 }
 
 #define macro MAIN() = takes (0) returns (0) {
     // Load the function selector
     0x00 calldataload 0xE0 shr    // [sig]
 
-    // Jump to functino signature
+    // Jump to functuib signature
     dup1 __FUNC_SIG(getValue) eq getValue jumpi
     dup1 __FUNC_SIG(setValue) eq setValue jumpi
     dup1 __FUNC_SIG(increment) eq increment jumpi
+    dup1 __FUNC_SIG(getString) eq getString jumpi
+    dup1 __FUNC_SIG(setString) eq setString jumpi
+    dup1 __FUNC_SIG(getArray) eq getArray jumpi
+    dup1 __FUNC_SIG(setArray) eq setArray jumpi
+    dup1 __FUNC_SIG(getMap) eq getMap jumpi
+    dup1 __FUNC_SIG(setMap) eq setMap jumpi    
 
     // If we reach here its an invalid function signature
     stop
@@ -51,4 +206,22 @@
 
     increment:
         INCREMENT()
+
+    getString:
+        GET_STRING()
+
+    setString:
+        SET_STRING()
+
+    getArray:
+        GET_ARRAY()
+
+    setArray:
+        SET_ARRAY()
+
+    getMap:
+        GET_MAP()
+
+    setMap:
+        SET_MAP()
 }
